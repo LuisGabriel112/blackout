@@ -66,6 +66,34 @@ namespace Blackout.Inventory
             return true;
         }
 
+        /// <summary>
+        /// Removes all of <paramref name="amount"/> or nothing.
+        /// Drains the newest stacks first, so partial stacks stay at the front.
+        /// </summary>
+        public bool TryRemove(ItemDefinition item, int amount = 1)
+        {
+            if (item == null || amount <= 0)
+                return false;
+            if (Count(item) < amount)
+                return false;
+
+            int remaining = amount;
+            for (int i = stacks.Count - 1; i >= 0 && remaining > 0; i--)
+            {
+                Stack stack = stacks[i];
+                if (stack.Item != item)
+                    continue;
+                int taken = Mathf.Min(remaining, stack.Amount);
+                stack.Amount -= taken;
+                remaining -= taken;
+                if (stack.Amount == 0)
+                    stacks.RemoveAt(i);
+            }
+
+            InventoryChanged?.Invoke();
+            return true;
+        }
+
         /// <summary>Total amount of <paramref name="item"/> across all stacks.</summary>
         public int Count(ItemDefinition item)
         {
