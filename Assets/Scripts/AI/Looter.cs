@@ -28,6 +28,8 @@ namespace Blackout.AI
         [SerializeField, Min(0f)] private float searchDuration = 5f;
         [Tooltip("How far from a stimulus the NavMesh may be sampled (lamps can be off-mesh).")]
         [SerializeField, Min(0.1f)] private float navSampleRadius = 3f;
+        [Tooltip("Seconds a stimulus that has not moved is ignored after the looter finished searching it. Stops a lit lamp from pinning it forever.")]
+        [SerializeField, Min(0f)] private float habituationTime = 20f;
 
         [Header("Sight")]
         [SerializeField, Min(0f)] private float sightRange = 12f;
@@ -67,6 +69,9 @@ namespace Blackout.AI
         private int patrolIndex;
         private bool waitingAtPoint;
         private Vector3 lastKnown;
+        private StimulusSource investigated;
+        private Vector3 investigatedPos;
+        private float forgetTime;
 
         private void Awake() => agent = GetComponent<NavMeshAgent>();
 
@@ -100,7 +105,7 @@ namespace Blackout.AI
                 }
                 else if (Current != State.Chase && TryPerceive(out StimulusSource best))
                 {
-                    BeginInvestigate(best.Position);
+                    BeginInvestigate(best.Position, best);
                 }
             }
 
@@ -125,7 +130,7 @@ namespace Blackout.AI
             for (int i = 0; i < sources.Count; i++)
             {
                 StimulusSource s = sources[i];
-                if (s.Radius <= 0f)
+                if (s.Radius <= 0f || IsHabituated(s))
                     continue;
 
                 float dist = Vector3.Distance(transform.position, s.Position);
@@ -236,9 +241,13 @@ namespace Blackout.AI
 
         // --- Investigate ---
 
-        private void BeginInvestigate(Vector3 position)
+        private void BeginInvestigate(Vector3 position, StimulusSource source = null)
         {
             lastKnown = position;
+            investigated = source;
+            if (source != null)
+                investigatedPos = source.Position;
+            forgetTime = float.PositiveInfinity;
             Current = State.Investigate;
             agent.speed = investigateSpeed;
             agent.isStopped = false;
@@ -261,7 +270,18 @@ namespace Blackout.AI
         {
             timer -= Time.deltaTime;
             if (timer <= 0f)
+            {
+                forgetTime = Time.time + habituationTime;
                 EnterPatrol();
+            }
+        }
+
+        /// <summary>A stimulus that has not moved since it was investigated carries no new information.</summary>
+        private bool IsHabituated(StimulusSource s)
+        {
+            return s == investigated
+                && Time.time < forgetTime
+                && (s.Position - investigatedPos).sqrMagnitude < 0.25f;
         }
 
         // --- Chase and attack ---
@@ -269,6 +289,7 @@ namespace Blackout.AI
         private void BeginChase()
         {
             Current = State.Chase;
+            investigated = null;
             waitingAtPoint = false;
             agent.speed = chaseSpeed;
             agent.isStopped = false;
